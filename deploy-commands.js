@@ -8,7 +8,10 @@ const commands = [];
 const commandFiles = fs.readdirSync("./commands").filter(f => f.endsWith(".js"));
 for (const file of commandFiles) {
   const cmd = await import(`./commands/${file}`);
-  commands.push(cmd.default.data.toJSON());
+  // export default harus memiliki .data (SlashCommandBuilder)
+  if (cmd.default && cmd.default.data) {
+    commands.push(cmd.default.data.toJSON());
+  }
 }
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
