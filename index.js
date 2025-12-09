@@ -51,7 +51,7 @@ client.on("ready", () => {
   startAllBoardUpdaters();
 });
 
-// ---------- STOCK BOARD UPDATER ----------
+// ---------- STOCK BOARD UPDATER (Robust) ----------
 function buildStockEmbed() {
   const embed = new EmbedBuilder()
     .setTitle("📦 Live Stock Gift")
@@ -67,37 +67,116 @@ function buildStockEmbed() {
 
 async function startBoardUpdater(key, guildId, channelId, messageId) {
   // avoid duplicate
-  if (boardIntervals[key]) return;
+  if (boardIntervals[key]) {
+    console.log(`Updater already running for ${key}`);
+    return;
+  }
+
   try {
-    const channel = await client.channels.fetch(channelId);
-    if (!channel) throw new Error("Channel not found");
-    const msg = await channel.messages.fetch(messageId);
-    if (!msg) throw new Error("Message not found");
+    // fetch channel
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) {
+      console.warn(`startBoardUpdater: channel ${channelId} not found. Removing board ${key}.`);
+      // remove from boards file
+      delete boards[key];
+      saveBoards(boards);
+      return;
+    }
+
+    // try fetch message
+    let msg = null;
+    try {
+      msg = await channel.messages.fetch(messageId);
+    } catch (err) {
+      // message not found or deleted
+      msg = null;
+    }
+
+    // if message missing (deleted), recreate it and save new messageId
+    if (!msg) {
+      console.log(`Board message ${messageId} not found in channel ${channelId}. Creating new board message...`);
+      gifts = loadGifts();
+      const newEmbed = buildStockEmbed();
+      const sent = await channel.send({ embeds: [newEmbed] });
+      // update boards mapping and persistent storage
+      boards[key] = { guildId, channelId, messageId: sent.id };
+      saveBoards(boards);
+      msg = sent;
+      messageId = sent.id;
+      console.log(`Created new board message ${sent.id} for ${key}`);
+    }
+
     // immediately update once
     gifts = loadGifts();
     await msg.edit({ embeds: [buildStockEmbed()] });
+
     // set interval
     const iv = setInterval(async () => {
       try {
         gifts = loadGifts(); // reload from disk to pick up external changes
         await msg.edit({ embeds: [buildStockEmbed()] });
       } catch (err) {
-        console.error("Gagal update stockboard:", err);
+        console.error(`Gagal update stockboard (${key}):`, err?.message ?? err);
+        // attempt recovery
+        try {
+          const ch = await client.channels.fetch(channelId).catch(() => null);
+          if (!ch) {
+            console.warn(`Channel ${channelId} not available anymore. Stopping updater for ${key} and removing board.`);
+            clearInterval(iv);
+            delete boardIntervals[key];
+            delete boards[key];
+            saveBoards(boards);
+            return;
+          }
+          // try re-fetch message
+          const m = await ch.messages.fetch(messageId).catch(() => null);
+          if (!m) {
+            console.warn(`Message ${messageId} missing. Will recreate now.`);
+            gifts = loadGifts();
+            const newEmbed2 = buildStockEmbed();
+            const sent2 = await ch.send({ embeds: [newEmbed2] });
+            boards[key] = { guildId, channelId, messageId: sent2.id };
+            saveBoards(boards);
+            msg = sent2;
+            messageId = sent2.id;
+            console.log(`Recreated board message ${sent2.id} for ${key}`);
+          } else {
+            msg = m;
+            messageId = m.id;
+          }
+        } catch (innerErr) {
+          console.error("Recovery attempt failed:", innerErr);
+        }
       }
     }, 10_000); // 10 detik
+
     boardIntervals[key] = iv;
-    console.log(`Started stockboard updater for ${key}`);
+    console.log(`Started stockboard updater for ${key} (msg ${messageId})`);
   } catch (err) {
     console.error("Could not start board updater for", key, err);
+    // if fatal, make sure not to keep a stale interval pointer
+    if (boardIntervals[key]) {
+      clearInterval(boardIntervals[key]);
+      delete boardIntervals[key];
+    }
   }
 }
 
 function startAllBoardUpdaters() {
   gifts = loadGifts();
   boards = loadBoards();
-  for (const compositeKey of Object.keys(boards)) {
-    const { guildId, channelId, messageId } = boards[compositeKey];
-    startBoardUpdater(compositeKey, guildId, channelId, messageId);
+  const keys = Object.keys(boards);
+  if (keys.length === 0) {
+    console.log("No boards to start.");
+    return;
+  }
+  for (const compositeKey of keys) {
+    const entry = boards[compositeKey];
+    if (!entry || !entry.channelId || !entry.messageId) {
+      console.warn(`Invalid board entry for key ${compositeKey}, skipping.`);
+      continue;
+    }
+    startBoardUpdater(compositeKey, entry.guildId, entry.channelId, entry.messageId);
   }
 }
 
@@ -105,6 +184,7 @@ function stopBoardUpdater(key) {
   if (boardIntervals[key]) {
     clearInterval(boardIntervals[key]);
     delete boardIntervals[key];
+    console.log(`Stopped board updater for ${key}`);
   }
 }
 
@@ -203,7 +283,7 @@ client.on("messageCreate", async (msg) => {
           const text = await res.text();
           codes = text.split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
         } catch (e) {
-          // ignore fetch errors
+          console.warn("Failed to fetch attachment for addstock:", e?.message ?? e);
         }
       }
     }
