@@ -1,6 +1,8 @@
-const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
-const fs = require("fs");
-require("dotenv").config();
+import { Client, GatewayIntentBits, PermissionsBitField, Partials } from "discord.js";
+import fs from "fs";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const client = new Client({
   intents: [
@@ -9,16 +11,17 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages
   ],
-  partials: ["CHANNEL"]
+  partials: [Partials.Channel]
 });
 
+// Load gifts
 let gifts = JSON.parse(fs.readFileSync("./gifts.txt", "utf8"));
 
 client.on("ready", () => {
   console.log(`Bot Online sebagai ${client.user.tag}`);
 });
 
-// list item
+// =============== LIST ITEM ==================
 client.on("messageCreate", (msg) => {
   if (msg.content !== "!itemlist") return;
 
@@ -29,12 +32,12 @@ client.on("messageCreate", (msg) => {
   msg.reply("📦 **Daftar Item Gift:**\n\n" + list);
 });
 
-// gift item ke DM
+// =============== GIFT ITEM ==================
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith("!gift")) return;
   if (msg.author.bot) return;
 
-  if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  if (!msg.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
     return msg.reply("❌ Kamu bukan admin.");
   }
 
