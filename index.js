@@ -154,4 +154,70 @@ client.on("messageCreate", async (msg) => {
 
     // Embed DM: tampilkan banyak kode (jika banyak → tampilkan per baris)
     const codeList = codes.join("\n");
-    const
+    const embed = new EmbedBuilder()
+      .setTitle("🎁 Kamu menerima Gift!")
+      .addFields(
+        { name: "Item", value: item, inline: true },
+        { name: `Kode (${codes.length})`, value: `\`\`\`\n${codeList}\n\`\`\``, inline: false },
+        { name: "Dikirim oleh", value: msg.author.tag, inline: false }
+      )
+      .setFooter({ text: "Jaga kerahasiaan kode ini." })
+      .setTimestamp();
+
+    try {
+      await target.send({ embeds: [embed] });
+      msg.reply(`✅ Gift '${item}' (${codes.length} kode) sudah dikirim ke ${target.tag}`);
+    } catch {
+      // jika gagal DM, kembalikan codes ke awal stock agar urutannya tetap:
+      gifts = loadGifts(); // reload untuk safety
+      if (!gifts[item]) gifts[item] = [];
+      gifts[item] = codes.concat(gifts[item]);
+      saveGifts(gifts);
+      msg.reply("❌ DM user tertutup. Kode dikembalikan ke stok.");
+    }
+  }
+
+  // ----- Tambahan: !addstock (prefix) -----
+  // Usage: !addstock itemName code1,code2,code3  OR !addstock itemName (attach file)
+  if (args[0] === "!addstock") {
+    if (!msg.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return msg.reply("❌ Kamu bukan admin.");
+    }
+
+    const item = args[1]?.toLowerCase();
+    const raw = msg.content.split(/\s+/).slice(2).join(" ");
+    if (!item) return msg.reply("❗ Contoh: `!addstock diamond code1,code2,code3`");
+
+    // parse codes from message content (comma or newline)
+    let codes = [];
+    if (raw) {
+      codes = raw.split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
+    }
+
+    // if no codes in message, but attachment present and is txt, try to read it
+    if (codes.length === 0 && msg.attachments.size > 0) {
+      const att = msg.attachments.first();
+      if (att && att.url.endsWith(".txt")) {
+        try {
+          const res = await fetch(att.url);
+          const text = await res.text();
+          codes = text.split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
+        } catch (e) {
+          // ignore fetch errors
+        }
+      }
+    }
+
+    if (codes.length === 0) return msg.reply("❗ Tidak ada kode ditemukan. Ketik kode setelah nama item dipisah koma, atau lampirkan file .txt");
+
+    gifts = loadGifts();
+    if (!gifts[item]) gifts[item] = [];
+    gifts[item].push(...codes);
+    saveGifts(gifts);
+
+    msg.reply(`✅ Berhasil menambahkan ${codes.length} kode ke item **${item}**. Total stok sekarang: **${gifts[item].length}**.`);
+  }
+});
+
+// Login
+client.login(process.env.TOKEN);
