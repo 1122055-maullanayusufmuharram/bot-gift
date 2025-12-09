@@ -1,1 +1,7 @@
-{}
+{
+  "GUILDID_CHANNELID": {
+    "guildId": "GUILDID",
+    "channelId": "CHANNELID",
+    "messageId": "MESSAGEID"
+  }
+}
