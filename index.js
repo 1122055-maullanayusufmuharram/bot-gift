@@ -1,7 +1,6 @@
 import { Client, GatewayIntentBits, PermissionsBitField, Partials } from "discord.js";
 import fs from "fs";
 import dotenv from "dotenv";
-
 dotenv.config();
 
 const client = new Client({
@@ -15,62 +14,73 @@ const client = new Client({
 });
 
 // Load gifts
-let gifts = JSON.parse(fs.readFileSync("./gifts.txt", "utf8"));
+let gifts = {};
+try {
+  gifts = JSON.parse(fs.readFileSync("./gifts.txt", "utf8"));
+  console.log("Gift loaded:", gifts);
+} catch (e) {
+  console.log("gifts.txt error / kosong.");
+  gifts = {};
+}
 
 client.on("ready", () => {
   console.log(`Bot Online sebagai ${client.user.tag}`);
 });
 
-// =============== LIST ITEM ==================
-client.on("messageCreate", (msg) => {
-  if (msg.content !== "!itemlist") return;
+// ========================= MESSAGE HANDLER =========================
 
-  const list = Object.keys(gifts)
-    .map(k => `🔹 ${k} — Stok: ${gifts[k].length}`)
-    .join("\n");
-
-  msg.reply("📦 **Daftar Item Gift:**\n\n" + list);
-});
-
-// =============== GIFT ITEM ==================
+// Semua command dalam satu handler biar rapi
 client.on("messageCreate", async (msg) => {
-  if (!msg.content.startsWith("!gift")) return;
   if (msg.author.bot) return;
 
-  if (!msg.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
-    return msg.reply("❌ Kamu bukan admin.");
-  }
-
   const args = msg.content.split(" ");
-  const target = msg.mentions.users.first();
-  const item = args[2]?.toLowerCase();
 
-  if (!target) return msg.reply("❗ Contoh: `!gift @user diamond`");
-  if (!item) return msg.reply("❗ Pilih item.");
+  // ----- LIST ITEM -----
+  if (msg.content === "!itemlist") {
+    const list = Object.keys(gifts)
+      .map(k => `🔹 ${k} — Stok: ${gifts[k].length}`)
+      .join("\n");
 
-  if (!gifts[item]) {
-    return msg.reply(`❌ Item '${item}' tidak ada.`);
+    return msg.reply("📦 **Daftar Item Gift:**\n\n" + list);
   }
 
-  if (gifts[item].length === 0) {
-    return msg.reply(`⚠️ Stok item '${item}' habis.`);
-  }
+  // ----- GIFT ITEM -----
+  if (args[0] === "!gift") {
+    if (!msg.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return msg.reply("❌ Kamu bukan admin.");
+    }
 
-  const code = gifts[item].shift();
+    const target = msg.mentions.users.first();
+    const item = args[2]?.toLowerCase();
 
-  fs.writeFileSync("./gifts.txt", JSON.stringify(gifts, null, 2));
+    if (!target) return msg.reply("❗ Contoh: `!gift @user diamond`");
+    if (!item) return msg.reply("❗ Pilih item.");
 
-  try {
-    await target.send(
-      `🎁 **Kamu menerima Gift!**\n\n` +
-      `**Item:** ${item}\n` +
-      `**Kode:** ${code}\n\n` +
-      `Dari: ${msg.author.tag}`
-    );
-    msg.reply(`✅ Gift '${item}' sudah dikirim ke ${target.tag}`);
-  } catch {
-    msg.reply("❌ DM user tertutup.");
+    if (!gifts[item]) {
+      return msg.reply(`❌ Item '${item}' tidak ada.`);
+    }
+
+    if (gifts[item].length === 0) {
+      return msg.reply(`⚠️ Stok item '${item}' habis.`);
+    }
+
+    const code = gifts[item].shift();
+    fs.writeFileSync("./gifts.txt", JSON.stringify(gifts, null, 2));
+
+    try {
+      await target.send(
+        `🎁 **Kamu menerima Gift!**\n\n` +
+        `**Item:** ${item}\n` +
+        `**Kode:** ${code}\n\n` +
+        `Dari: ${msg.author.tag}`
+      );
+
+      msg.reply(`✅ Gift '${item}' sudah dikirim ke ${target.tag}`);
+    } catch {
+      msg.reply("❌ DM user tertutup.");
+    }
   }
 });
 
+// Login
 client.login(process.env.TOKEN);
